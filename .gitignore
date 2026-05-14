@@ -17,3 +17,5 @@ Thumbs.db
 
 # Supabase
 .env
+node_modules/
+package-lock.json
