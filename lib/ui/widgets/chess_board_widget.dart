@@ -4,8 +4,6 @@ import '../../models/models.dart';
 import '../../models/game_state.dart';
 import '../../providers/game_provider.dart';
 
-/// Whether this is an online (multiplayer) game where only one side can move.
-final isOfflineGameProvider = StateProvider<bool>((ref) => false);
 
 /// The futuristic chess board with frosted glass tiles, neon glow effects,
 /// and smooth piece movement animations.
@@ -298,19 +296,24 @@ class _PieceWidget extends StatelessWidget {
                 ],
               )
             : null,
-        child: Text(
-          piece.unicode,
-          style: TextStyle(
-            fontSize: 32,
-            color: isWhite ? const Color(0xFFF8F8F8) : const Color(0xFFD0D0D0),
-            shadows: [
-              Shadow(
-                color: isWhite
-                    ? const Color(0xFF66FCF1).withValues(alpha: 0.3)
-                    : const Color(0xFFFF0055).withValues(alpha: 0.3),
-                blurRadius: 12,
-              ),
-            ],
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            piece.unicode,
+            style: TextStyle(
+              fontSize: 36,
+              fontWeight: FontWeight.normal,
+              fontFamily: 'Arial',
+              color: isWhite ? const Color(0xFFF0F0F0) : const Color(0xFF404040),
+              shadows: [
+                Shadow(
+                  color: isWhite
+                      ? const Color(0xFF66FCF1).withValues(alpha: 0.4)
+                      : const Color(0xFFFF0055).withValues(alpha: 0.4),
+                  blurRadius: 12,
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -13,6 +13,13 @@ class GameState extends Equatable {
   /// How many full turns have elapsed (White+Black move = 1 turn).
   final int fullTurnCount;
 
+  /// Per-player draft tracking: has this player picked their ability?
+  final bool whiteDrafted;
+  final bool blackDrafted;
+
+  /// Which color is currently drafting (set when draft triggers).
+  final PlayerColor? draftingPlayer;
+
   /// Which player's turn it currently is (derived from board.turn).
   PlayerColor get currentTurn => board.turn;
 
@@ -45,6 +52,9 @@ class GameState extends Equatable {
     this.fullTurnCount = 0,
     this.whiteAbilities = const [],
     this.blackAbilities = const [],
+    this.whiteDrafted = false,
+    this.blackDrafted = false,
+    this.draftingPlayer,
   });
 
   /// Create a new game in waiting state.
@@ -62,16 +72,12 @@ class GameState extends Equatable {
 
   // ─── Move Execution with Ability Hooks ───────────────────────────────────
 
-  /// Execute a move, applying all relevant ability hooks.
-  /// Returns the new GameState and any triggered ability notifications.
   GameState executeMove(Move move) {
-    // 1. Check before-move hooks
     for (final ability in currentPlayerAbilities) {
       final mod = ability.onBeforeMove(board, move);
-      if (mod != null && mod.blocked) return this; // Move blocked
+      if (mod != null && mod.blocked) return this;
     }
 
-    // 2. Execute the move on the board
     final result = board.executeMove(move);
     var newBoard = Board(
       grid: result.grid,
@@ -86,50 +92,36 @@ class GameState extends Equatable {
       lastMove: result.lastMove,
     );
 
-    // 3. Handle capture hooks
     var capturedPiece = result.capturedPiece;
     if (capturedPiece != null) {
       for (final ability in currentPlayerAbilities) {
-        final mod = ability.onPieceCaptured(
-          board,
-          capturedPiece!,
-          move.piece,
-          move.to,
-        );
+        final mod = ability.onPieceCaptured(board, capturedPiece!, move.piece, move.to);
         if (mod != null) {
           if (mod.revive && mod.revivePosition != null) {
-            // Revive the piece instead
             newBoard = _revivePiece(newBoard, capturedPiece, mod.revivePosition!);
             capturedPiece = null;
           }
           if (mod.freezeCapturer) {
-            // Freeze the capturing piece
             newBoard = _freezePiece(newBoard, move.to, mod.freezeTurns);
           }
         }
       }
     }
 
-    // 4. After-move hooks
     for (final ability in currentPlayerAbilities) {
       ability.onAfterMove(board, result);
       ability.tickCooldown();
     }
 
-    // Opponent's abilities also tick cooldowns
-    final opponentAbilities = currentTurn == PlayerColor.white
-        ? blackAbilities
-        : whiteAbilities;
+    final opponentAbilities =
+        currentTurn == PlayerColor.white ? blackAbilities : whiteAbilities;
     for (final ability in opponentAbilities) {
       ability.tickCooldown();
     }
 
-    // 5. Update full turn count
-    final newTurnCount = currentTurn == PlayerColor.black
-        ? fullTurnCount + 1
-        : fullTurnCount;
+    final newTurnCount =
+        currentTurn == PlayerColor.black ? fullTurnCount + 1 : fullTurnCount;
 
-    // 6. Check for end conditions
     var newStatus = status;
     if (result.isCheckmate) {
       newStatus = GameStatus.finished;
@@ -144,12 +136,10 @@ class GameState extends Equatable {
     );
   }
 
-  /// Execute a Trojan Horse swap.
   GameState executeSwap(Piece knight, Piece pawn) {
-    final newGrid = List.generate(
-        8, (row) => List.generate(8, (col) => board.grid[row][col]));
+    final newGrid =
+        List.generate(8, (row) => List.generate(8, (col) => board.grid[row][col]));
 
-    // Swap positions
     newGrid[knight.position.row][knight.position.col] = pawn.copyWith(
       position: knight.position,
       hasMoved: true,
@@ -171,11 +161,9 @@ class GameState extends Equatable {
     return copyWith(board: newBoard);
   }
 
-  /// Execute a Sniper's Nest capture (rook doesn't move, target is removed).
   GameState executeSnipe(Piece rook, Position target) {
-    final newGrid = List.generate(
-        8, (row) => List.generate(8, (col) => board.grid[row][col]));
-
+    final newGrid =
+        List.generate(8, (row) => List.generate(8, (col) => board.grid[row][col]));
     newGrid[target.row][target.col] = null;
 
     final updatedAbilities = currentPlayerAbilities.map((a) {
@@ -197,23 +185,17 @@ class GameState extends Equatable {
       castlingRights: board.castlingRights,
     );
 
-    final newTurnCount = currentTurn == PlayerColor.black
-        ? fullTurnCount + 1
-        : fullTurnCount;
+    final newTurnCount =
+        currentTurn == PlayerColor.black ? fullTurnCount + 1 : fullTurnCount;
 
     return copyWith(
       board: newBoard,
       fullTurnCount: newTurnCount,
-      whiteAbilities: currentTurn == PlayerColor.white
-          ? updatedAbilities
-          : whiteAbilities,
-      blackAbilities: currentTurn == PlayerColor.black
-          ? updatedAbilities
-          : blackAbilities,
+      whiteAbilities: currentTurn == PlayerColor.white ? updatedAbilities : whiteAbilities,
+      blackAbilities: currentTurn == PlayerColor.black ? updatedAbilities : blackAbilities,
     );
   }
 
-  /// Add an ability to a player (after draft selection).
   GameState addAbility(PlayerColor player, Ability ability) {
     ability.owner = player;
     if (player == PlayerColor.white) {
@@ -223,9 +205,16 @@ class GameState extends Equatable {
     }
   }
 
-  // ─── Legal Moves (with ability extensions) ─────────────────────────────
+  // ─── Draft Helpers ──────────────────────────────────────────────────────
 
-  /// Get all legal moves for the piece at [pos], including ability-granted ones.
+  /// Whether the given player still needs to draft.
+  bool needsDraft(PlayerColor player) {
+    if (status != GameStatus.drafting) return false;
+    return player == PlayerColor.white ? !whiteDrafted : !blackDrafted;
+  }
+
+  // ─── Legal Moves ────────────────────────────────────────────────────────
+
   List<Move> getLegalMoves(Position pos) {
     final baseMoves = board.getLegalMoves(pos);
     final piece = board.pieceAt(pos);
@@ -238,19 +227,14 @@ class GameState extends Equatable {
         for (final target in extraTargets) {
           final targetPiece = board.pieceAt(target);
           abilityMoves.add(Move(
-            from: pos,
-            to: target,
-            piece: piece,
-            capturedPiece: targetPiece,
+            from: pos, to: target, piece: piece, capturedPiece: targetPiece,
           ));
         }
       }
     }
-
     return [...baseMoves, ...abilityMoves];
   }
 
-  /// Get all legal moves for [color].
   List<Move> allLegalMoves(PlayerColor color) {
     final moves = <Move>[];
     for (final piece in board.piecesOf(color)) {
@@ -270,6 +254,9 @@ class GameState extends Equatable {
     int? fullTurnCount,
     List<Ability>? whiteAbilities,
     List<Ability>? blackAbilities,
+    bool? whiteDrafted,
+    bool? blackDrafted,
+    PlayerColor? draftingPlayer,
   }) {
     return GameState(
       gameId: gameId ?? this.gameId,
@@ -280,6 +267,9 @@ class GameState extends Equatable {
       fullTurnCount: fullTurnCount ?? this.fullTurnCount,
       whiteAbilities: whiteAbilities ?? this.whiteAbilities,
       blackAbilities: blackAbilities ?? this.blackAbilities,
+      whiteDrafted: whiteDrafted ?? this.whiteDrafted,
+      blackDrafted: blackDrafted ?? this.blackDrafted,
+      draftingPlayer: draftingPlayer ?? this.draftingPlayer,
     );
   }
 
@@ -288,16 +278,10 @@ class GameState extends Equatable {
   Board _revivePiece(Board b, Piece piece, Position at) {
     final newGrid =
         List.generate(8, (row) => List.generate(8, (col) => b.grid[row][col]));
-    newGrid[at.row][at.col] = piece.copyWith(
-      position: at,
-      hasMoved: false,
-    );
+    newGrid[at.row][at.col] = piece.copyWith(position: at, hasMoved: false);
     return Board(
-      grid: newGrid,
-      turn: b.turn,
-      enPassantTarget: b.enPassantTarget,
-      halfMoveClock: b.halfMoveClock,
-      fullMoveNumber: b.fullMoveNumber,
+      grid: newGrid, turn: b.turn, enPassantTarget: b.enPassantTarget,
+      halfMoveClock: b.halfMoveClock, fullMoveNumber: b.fullMoveNumber,
       castlingRights: b.castlingRights,
     );
   }
@@ -307,17 +291,12 @@ class GameState extends Equatable {
         List.generate(8, (row) => List.generate(8, (col) => b.grid[row][col]));
     final piece = newGrid[at.row][at.col];
     if (piece != null) {
-      newGrid[at.row][at.col] = piece.copyWith(
-        isFrozen: true,
-        frozenTurnsRemaining: turns,
-      );
+      newGrid[at.row][at.col] =
+          piece.copyWith(isFrozen: true, frozenTurnsRemaining: turns);
     }
     return Board(
-      grid: newGrid,
-      turn: b.turn,
-      enPassantTarget: b.enPassantTarget,
-      halfMoveClock: b.halfMoveClock,
-      fullMoveNumber: b.fullMoveNumber,
+      grid: newGrid, turn: b.turn, enPassantTarget: b.enPassantTarget,
+      halfMoveClock: b.halfMoveClock, fullMoveNumber: b.fullMoveNumber,
       castlingRights: b.castlingRights,
     );
   }
@@ -334,14 +313,11 @@ class GameState extends Equatable {
     final rights = List<bool>.from(b.castlingRights);
     final piece = b.pieceAt(move.from);
     if (piece == null) return rights;
-
     if (piece.type == PieceType.king) {
       if (piece.color == PlayerColor.white) {
-        rights[0] = false;
-        rights[1] = false;
+        rights[0] = false; rights[1] = false;
       } else {
-        rights[2] = false;
-        rights[3] = false;
+        rights[2] = false; rights[3] = false;
       }
     }
     if (piece.type == PieceType.rook) {
@@ -354,7 +330,6 @@ class GameState extends Equatable {
     if (move.to == const Position(7, 0)) rights[1] = false;
     if (move.to == const Position(0, 7)) rights[2] = false;
     if (move.to == const Position(0, 0)) rights[3] = false;
-
     return rights;
   }
 
@@ -367,13 +342,12 @@ class GameState extends Equatable {
         'whitePlayerId': whitePlayerId,
         'blackPlayerId': blackPlayerId,
         'fullTurnCount': fullTurnCount,
+        'whiteDrafted': whiteDrafted,
+        'blackDrafted': blackDrafted,
+        'draftingPlayer': draftingPlayer?.name,
       };
 
-  /// Parse from either format:
-  /// 1. Direct GameState JSON (camelCase keys)
-  /// 2. Supabase DB row (snake_case columns with board_state JSONB)
   factory GameState.fromJson(Map<String, dynamic> json) {
-    // If this is a DB row, extract the nested board_state
     final stateJson = json.containsKey('board_state') && json['board_state'] is Map
         ? Map<String, dynamic>.from(json['board_state'] as Map)
         : json;
@@ -388,26 +362,23 @@ class GameState extends Equatable {
       board: Board.fromJson(Map<String, dynamic>.from(boardJson)),
       status: GameStatus.values.byName(
           (stateJson['status'] ?? json['status'] ?? 'waiting') as String),
-      whitePlayerId:
-          (stateJson['whitePlayerId'] ?? json['white_player_id']) as String?,
-      blackPlayerId:
-          (stateJson['blackPlayerId'] ?? json['black_player_id']) as String?,
-      fullTurnCount:
-          (stateJson['fullTurnCount'] ?? json['full_turn_count'] ?? 0) as int,
+      whitePlayerId: (stateJson['whitePlayerId'] ?? json['white_player_id']) as String?,
+      blackPlayerId: (stateJson['blackPlayerId'] ?? json['black_player_id']) as String?,
+      fullTurnCount: (stateJson['fullTurnCount'] ?? json['full_turn_count'] ?? 0) as int,
+      whiteDrafted: (stateJson['whiteDrafted'] ?? false) as bool,
+      blackDrafted: (stateJson['blackDrafted'] ?? false) as bool,
+      draftingPlayer: stateJson['draftingPlayer'] != null
+          ? PlayerColor.values.byName(stateJson['draftingPlayer'] as String)
+          : null,
     );
   }
 
   @override
   List<Object?> get props => [
-        gameId,
-        board.grid,
-        board.turn,
-        status,
-        whitePlayerId,
-        blackPlayerId,
-        fullTurnCount,
-        whiteAbilities.length,
-        blackAbilities.length,
+        gameId, board.grid, board.turn, status,
+        whitePlayerId, blackPlayerId, fullTurnCount,
+        whiteAbilities.length, blackAbilities.length,
+        whiteDrafted, blackDrafted, draftingPlayer,
       ];
 }
 

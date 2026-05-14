@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../models/game_state.dart';
-import '../models/ability_pool.dart';
 import '../abilities/abilities.dart';
 import '../services/supabase_service.dart';
 
@@ -44,20 +43,19 @@ class GameNotifier extends StateNotifier<GameState?> {
     if (state == null) return;
     final currentState = state!;
 
-    // Check if this is a special ability action
-    // (Sniper's Nest snipe — rook doesn't change position)
+    // Check if this is a Sniper's Nest snipe
     final piece = currentState.board.pieceAt(move.from);
     if (piece != null && piece.type == PieceType.rook) {
-      // Check if this is a snipe (target is same row/col, rook stays)
       final sniperAbility = currentState.currentPlayerAbilities
           .whereType<SnipersNest>()
           .firstOrNull;
-      if (sniperAbility != null && sniperAbility.isReady &&
+      if (sniperAbility != null &&
+          sniperAbility.isReady &&
           move.from != move.to &&
           (move.from.row == move.to.row || move.from.col == move.to.col)) {
-        // This is a snipe!
         state = currentState.executeSnipe(piece, move.to);
         _checkDraft();
+        _syncState();
         return;
       }
     }
@@ -65,14 +63,13 @@ class GameNotifier extends StateNotifier<GameState?> {
     // Normal move execution
     state = currentState.executeMove(move);
 
-    // Check draft BEFORE syncing so opponent sees drafting status
+    // Check draft BEFORE syncing
     _checkDraft();
 
-    // Sync to Supabase for multiplayer (includes draft status if triggered)
+    // Sync to Supabase
     _syncState();
   }
 
-  /// Try to sync state to Supabase (no-op if offline).
   void _syncState() {
     if (state == null) return;
     try {
@@ -80,17 +77,13 @@ class GameNotifier extends StateNotifier<GameState?> {
         gameId: state!.gameId,
         state: state!,
       );
-    } catch (_) {
-      // Silently ignore sync failures (offline mode, no connection, etc.)
-    }
+    } catch (_) {}
   }
 
-  /// Execute a Trojan Horse swap.
   void executeSwap(Piece knight, Piece pawn) {
     if (state == null) return;
     state = state!.executeSwap(knight, pawn);
 
-    // Mark Trojan Horse as used
     final ability = state!.currentPlayerAbilities
         .whereType<TrojanHorse>()
         .firstOrNull;
@@ -99,29 +92,27 @@ class GameNotifier extends StateNotifier<GameState?> {
     }
 
     _checkDraft();
+    _syncState();
   }
 
   /// Check if it's time for a draft (every 3 full turns).
   void _checkDraft() {
     if (state == null) return;
 
-    // Draft triggers after both players have moved 3 times
-    // (i.e., fullTurnCount is a multiple of 3, and we just finished a black move)
+    // Draft triggers after both players have moved 3 full turns
+    // and it's white's turn (black just completed the 3rd full turn)
     if (state!.fullTurnCount > 0 &&
         state!.fullTurnCount % 3 == 0 &&
-        state!.board.turn == PlayerColor.white) {
-      // Trigger draft for both players
-      state = state!.copyWith(status: GameStatus.drafting);
+        state!.board.turn == PlayerColor.white &&
+        state!.status != GameStatus.drafting) {
+      // Trigger draft: white drafts first for this cycle
+      state = state!.copyWith(
+        status: GameStatus.drafting,
+        whiteDrafted: false,
+        blackDrafted: false,
+        draftingPlayer: PlayerColor.white,
+      );
     }
-  }
-
-  /// Get draft choices for a player.
-  List<Ability> getDraftChoices(PlayerColor player) {
-    if (state == null) return [];
-    final owned = player == PlayerColor.white
-        ? state!.whiteAbilities
-        : state!.blackAbilities;
-    return AbilityPool.draftChoices(count: 3, alreadyOwned: owned);
   }
 
   /// Player selects an ability from the draft.
@@ -129,22 +120,46 @@ class GameNotifier extends StateNotifier<GameState?> {
     if (state == null) return;
     state = state!.addAbility(player, ability);
 
-    // Resume playing after draft
-    state = state!.copyWith(status: GameStatus.playing);
-
-    // Trigger CHARGE immediately if selected
-    if (ability is Charge) {
-      final chargeMoves = ability.onTurnStart(state!.board);
-      for (final move in chargeMoves) {
-        state = state!.executeMove(move);
-      }
+    // Mark this player as drafted
+    if (player == PlayerColor.white) {
+      state = state!.copyWith(whiteDrafted: true);
+    } else {
+      state = state!.copyWith(blackDrafted: true);
     }
 
-    // Sync after draft so opponent sees the update
+    // Check if both have drafted (or offline where one player does both)
+    final bothDrafted = state!.whiteDrafted && state!.blackDrafted;
+
+    if (bothDrafted) {
+      // Both done — resume playing
+      state = state!.copyWith(
+        status: GameStatus.playing,
+        draftingPlayer: null,
+      );
+
+      // Trigger CHARGE if selected
+      if (ability is Charge) {
+        final chargeMoves = ability.onTurnStart(state!.board);
+        for (final move in chargeMoves) {
+          state = state!.executeMove(move);
+        }
+      }
+    } else {
+      // Switch drafting player to the one who hasn't drafted yet
+      state = state!.copyWith(
+        draftingPlayer: state!.whiteDrafted ? PlayerColor.black : PlayerColor.white,
+      );
+    }
+
     _syncState();
   }
 
-  /// Reset the game.
+  /// Whether the given player currently needs to draft.
+  bool needsDraft(PlayerColor player) {
+    if (state == null) return false;
+    return state!.needsDraft(player);
+  }
+
   void reset() {
     state = null;
   }
@@ -165,12 +180,26 @@ final legalMovesProvider = Provider<List<Move>>((ref) {
   return game.getLegalMoves(pos);
 });
 
-/// Derived provider: is the game in a drafting state?
+/// Derived provider: is the game in a drafting state for the current player?
 final isDraftingProvider = Provider<bool>((ref) {
   final game = ref.watch(gameProvider);
-  return game?.status == GameStatus.drafting;
+  final myColor = ref.watch(myColorProvider);
+  final isOffline = ref.watch(isOfflineGameProvider);
+
+  if (game == null || game.status != GameStatus.drafting) return false;
+
+  if (isOffline) {
+    // Offline: one person drafts for both, so always show draft until both done
+    return !game.whiteDrafted || !game.blackDrafted;
+  } else {
+    // Online: show draft only if THIS player hasn't drafted yet
+    if (myColor == null) return false;
+    return game.needsDraft(myColor);
+  }
 });
 
 /// Derived provider: current player's color (from local perspective).
-/// This will be set when the player joins a game.
 final myColorProvider = StateProvider<PlayerColor?>((ref) => null);
+
+/// Whether this is an offline (local) game where both sides can move.
+final isOfflineGameProvider = StateProvider<bool>((ref) => false);

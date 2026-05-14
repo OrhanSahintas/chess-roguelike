@@ -103,12 +103,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             ),
             if (isDrafting)
               DraftScreen(
+                draftingFor: gameState.draftingPlayer ?? PlayerColor.white,
                 onAbilitySelected: (ability) {
-                  final myColor = ref.read(myColorProvider);
-                  if (myColor != null) {
+                  final draftColor = gameState.draftingPlayer;
+                  if (draftColor != null) {
                     ref
                         .read(gameProvider.notifier)
-                        .selectDraftAbility(myColor, ability);
+                        .selectDraftAbility(draftColor, ability);
                   }
                 },
               ),

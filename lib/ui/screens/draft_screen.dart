@@ -2,13 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:math';
 import '../../abilities/abilities.dart';
+import '../../models/models.dart';
 import '../../models/ability_pool.dart';
 
 /// The ability draft modal — 3 cards flip over, player picks one.
 class DraftScreen extends StatefulWidget {
+  final PlayerColor draftingFor;
   final void Function(Ability ability) onAbilitySelected;
 
-  const DraftScreen({super.key, required this.onAbilitySelected});
+  const DraftScreen({
+    super.key,
+    required this.draftingFor,
+    required this.onAbilitySelected,
+  });
 
   @override
   State<DraftScreen> createState() => _DraftScreenState();
@@ -63,20 +69,48 @@ class _DraftScreenState extends State<DraftScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Title
-              ShaderMask(
-                shaderCallback: (bounds) => const LinearGradient(
-                  colors: [Color(0xFF66FCF1), Color(0xFFC77DFF)],
-                ).createShader(bounds),
-                child: const Text(
-                  'DRAFT PHASE',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    letterSpacing: 6,
+              // Title with color indicator
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: widget.draftingFor == PlayerColor.white
+                          ? const Color(0xFF66FCF1)
+                          : const Color(0xFFFF0055),
+                      boxShadow: [
+                        BoxShadow(
+                          color: widget.draftingFor == PlayerColor.white
+                              ? const Color(0xFF66FCF1).withValues(alpha: 0.5)
+                              : const Color(0xFFFF0055).withValues(alpha: 0.5),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  ShaderMask(
+                    shaderCallback: (bounds) => LinearGradient(
+                      colors: widget.draftingFor == PlayerColor.white
+                          ? [const Color(0xFF66FCF1), const Color(0xFFC77DFF)]
+                          : [const Color(0xFFFF0055), const Color(0xFFC77DFF)],
+                    ).createShader(bounds),
+                    child: Text(
+                      widget.draftingFor == PlayerColor.white
+                          ? 'WHITE DRAFT'
+                          : 'BLACK DRAFT',
+                      style: const TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 6,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Text(
