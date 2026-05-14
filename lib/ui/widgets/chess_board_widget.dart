@@ -301,10 +301,10 @@ class _PieceWidget extends StatelessWidget {
         child: FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
-            piece.letter,
+            piece.unicode,
             style: TextStyle(
               fontSize: 36,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.normal,
               color: fgColor,
               shadows: [
                 Shadow(
