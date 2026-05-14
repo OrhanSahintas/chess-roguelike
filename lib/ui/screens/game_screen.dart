@@ -25,13 +25,15 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   @override
   void initState() {
     super.initState();
-    // Set offline mode
     ref.read(isOfflineGameProvider.notifier).state = widget.isOffline;
 
-    // Initialize game if not already loaded
+    // Initialize or restore game
     final gameNotifier = ref.read(gameProvider.notifier);
     if (ref.read(gameProvider) == null) {
-      gameNotifier.newGame(gameId: widget.gameId);
+      gameNotifier.newGame(
+        gameId: widget.gameId,
+        startPlaying: true, // Go straight to playing (refresh or deep link)
+      );
     }
 
     // Subscribe to realtime updates when playing online

@@ -196,7 +196,10 @@ class HomeScreen extends ConsumerWidget {
     HapticFeedback.mediumImpact();
     final gameId = _uid.v4();
 
-    ref.read(gameProvider.notifier).newGame(gameId: gameId);
+    ref.read(gameProvider.notifier).newGame(
+      gameId: gameId,
+      startPlaying: true,
+    );
     ref.read(myColorProvider.notifier).state = PlayerColor.white;
 
     context.go('/game/$gameId?offline=true');

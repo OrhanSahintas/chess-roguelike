@@ -10,8 +10,11 @@ class GameNotifier extends StateNotifier<GameState?> {
   GameNotifier() : super(null);
 
   /// Start a new game.
-  void newGame({required String gameId, String? whitePlayerId}) {
+  void newGame({required String gameId, String? whitePlayerId, bool startPlaying = false}) {
     state = GameState.newGame(gameId: gameId, whitePlayerId: whitePlayerId);
+    if (startPlaying) {
+      state = state!.copyWith(status: GameStatus.playing);
+    }
   }
 
   /// Join an existing game as black.
