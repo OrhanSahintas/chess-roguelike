@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:uuid/uuid.dart';
+import '../../models/models.dart';
+import '../../providers/game_provider.dart';
+import '../../services/supabase_service.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
+  static const _uid = Uuid();
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -55,20 +63,22 @@ class HomeScreen extends StatelessWidget {
                 // Play with Friend button
                 _NeonButton(
                   text: '⚡ PLAY WITH FRIEND',
-                  onTap: () {
-                    HapticFeedback.mediumImpact();
-                    // TODO: Create game in Supabase, navigate to game
-                  },
+                  onTap: () => _createOnlineGame(context, ref),
                 ),
                 const SizedBox(height: 16),
 
                 // Join by Code button
                 _NeonButton(
                   text: '🔗 JOIN BY CODE',
-                  onTap: () {
-                    HapticFeedback.mediumImpact();
-                    // TODO: Show join dialog
-                  },
+                  onTap: () => _showJoinDialog(context, ref),
+                  isSecondary: true,
+                ),
+                const SizedBox(height: 16),
+
+                // Play Offline button
+                _NeonButton(
+                  text: '🖥 PLAY OFFLINE',
+                  onTap: () => _createOfflineGame(context, ref),
                   isSecondary: true,
                 ),
               ],
@@ -77,6 +87,119 @@ class HomeScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Create a multiplayer game in Supabase and navigate to it.
+  Future<void> _createOnlineGame(BuildContext context, WidgetRef ref) async {
+    HapticFeedback.mediumImpact();
+    final playerId = _uid.v4();
+
+    try {
+      // Show loading
+      if (!context.mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      final gameId = await SupabaseService.instance.createGame(
+        whitePlayerId: playerId,
+      );
+
+      if (!context.mounted) return;
+      Navigator.of(context).pop(); // Dismiss loading
+
+      // Initialize the game provider
+      ref.read(gameProvider.notifier).newGame(
+        gameId: gameId,
+        whitePlayerId: playerId,
+      );
+      ref.read(myColorProvider.notifier).state = PlayerColor.white;
+
+      if (!context.mounted) return;
+      context.go('/game/$gameId');
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.of(context).pop(); // Dismiss loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to create game: $e')),
+      );
+    }
+  }
+
+  /// Show dialog to enter a game ID and join.
+  Future<void> _showJoinDialog(BuildContext context, WidgetRef ref) async {
+    HapticFeedback.mediumImpact();
+    final controller = TextEditingController();
+
+    final gameId = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F2833),
+        title: const Text('Join Game',
+            style: TextStyle(color: Color(0xFF66FCF1))),
+        content: TextField(
+          controller: controller,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'Paste game ID or code',
+            hintStyle: TextStyle(color: Colors.grey),
+            border: OutlineInputBorder(
+              borderSide: BorderSide(color: Color(0xFF66FCF1)),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Join',
+                style: TextStyle(color: Color(0xFF66FCF1))),
+          ),
+        ],
+      ),
+    );
+
+    if (gameId == null || gameId.isEmpty || !context.mounted) return;
+
+    final playerId = _uid.v4();
+
+    try {
+      await SupabaseService.instance.joinGame(
+        gameId: gameId,
+        blackPlayerId: playerId,
+      );
+
+      ref.read(gameProvider.notifier).newGame(
+        gameId: gameId,
+        whitePlayerId: null, // Joined as black
+      );
+      ref.read(gameProvider.notifier).joinGame(playerId);
+      ref.read(myColorProvider.notifier).state = PlayerColor.black;
+
+      if (!context.mounted) return;
+      context.go('/game/$gameId');
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to join: $e')),
+      );
+    }
+  }
+
+  /// Create a local-only game (no Supabase required).
+  void _createOfflineGame(BuildContext context, WidgetRef ref) {
+    HapticFeedback.mediumImpact();
+    final gameId = _uid.v4();
+
+    ref.read(gameProvider.notifier).newGame(gameId: gameId);
+    ref.read(myColorProvider.notifier).state = PlayerColor.white;
+
+    context.go('/game/$gameId');
   }
 }
 
@@ -115,17 +238,19 @@ class _NeonButtonState extends State<_NeonButton> {
         padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 32),
         decoration: BoxDecoration(
           color: _isHovered
-              ? primaryColor.withOpacity(0.15)
+              ? primaryColor.withValues(alpha: 0.15)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: _isHovered ? primaryColor : primaryColor.withOpacity(0.4),
+            color: _isHovered
+                ? primaryColor
+                : primaryColor.withValues(alpha: 0.4),
             width: _isHovered ? 2 : 1,
           ),
           boxShadow: _isHovered
               ? [
                   BoxShadow(
-                    color: primaryColor.withOpacity(0.3),
+                    color: primaryColor.withValues(alpha: 0.3),
                     blurRadius: 20,
                     spreadRadius: 2,
                   )
