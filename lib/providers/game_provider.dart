@@ -24,9 +24,13 @@ class GameNotifier extends StateNotifier<GameState?> {
     );
   }
 
-  /// Load game state from Supabase JSON.
+  /// Load game state from Supabase JSON, preserving local abilities.
   void loadFromJson(Map<String, dynamic> json) {
-    state = GameState.fromJson(json);
+    final remoteState = GameState.fromJson(json);
+    state = remoteState.copyWith(
+      whiteAbilities: state?.whiteAbilities ?? remoteState.whiteAbilities,
+      blackAbilities: state?.blackAbilities ?? remoteState.blackAbilities,
+    );
   }
 
   /// Get all legal moves for a position.

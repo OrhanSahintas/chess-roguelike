@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/models.dart';
@@ -24,6 +25,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   @override
   void initState() {
     super.initState();
+    // Set offline mode
+    ref.read(isOfflineGameProvider.notifier).state = widget.isOffline;
+
     // Initialize game if not already loaded
     final gameNotifier = ref.read(gameProvider.notifier);
     if (ref.read(gameProvider) == null) {
@@ -41,7 +45,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       _channel = SupabaseService.instance.subscribeToGame(
         widget.gameId,
         (updatedState) {
-          // Sync remote board state into our provider
+          if (!mounted) return;
           ref.read(gameProvider.notifier).loadFromJson(updatedState.toJson());
         },
       );
@@ -50,23 +54,20 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
   }
 
-  /// Push current game state to Supabase after a move.
-  void _syncToSupabase(GameState state) {
-    if (widget.isOffline) return;
-    try {
-      SupabaseService.instance.updateBoardState(
-        gameId: widget.gameId,
-        state: state,
-      );
-    } catch (e) {
-      debugPrint('Failed to sync game state: $e');
-    }
-  }
-
   @override
   void dispose() {
     _channel?.unsubscribe();
     super.dispose();
+  }
+
+  void _copyGameId() {
+    Clipboard.setData(ClipboardData(text: widget.gameId));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Game ID copied!'),
+        duration: Duration(seconds: 1),
+      ),
+    );
   }
 
   @override
@@ -85,22 +86,21 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            // Main game board
             Column(
               children: [
-                // Top bar
-                _GameTopBar(gameState: gameState),
-                // Chess board
+                _GameTopBar(
+                  gameState: gameState,
+                  gameId: widget.gameId,
+                  onCopyId: _copyGameId,
+                ),
                 const Expanded(
                   child: Center(
                     child: ChessBoardWidget(),
                   ),
                 ),
-                // Bottom info
                 _GameBottomBar(gameState: gameState),
               ],
             ),
-            // Draft overlay
             if (isDrafting)
               DraftScreen(
                 onAbilitySelected: (ability) {
@@ -109,7 +109,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     ref
                         .read(gameProvider.notifier)
                         .selectDraftAbility(myColor, ability);
-                    _syncToSupabase(ref.read(gameProvider)!);
                   }
                 },
               ),
@@ -122,28 +121,67 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
 class _GameTopBar extends StatelessWidget {
   final GameState gameState;
-  const _GameTopBar({required this.gameState});
+  final String gameId;
+  final VoidCallback onCopyId;
+
+  const _GameTopBar({
+    required this.gameState,
+    required this.gameId,
+    required this.onCopyId,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: const BoxDecoration(
         color: Color(0xFF1F2833),
         border: Border(bottom: BorderSide(color: Color(0x2066FCF1))),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Opponent info
-          _PlayerChip(
-            name: gameState.blackPlayerId ?? 'Opponent',
-            color: PlayerColor.black,
-            isActive: gameState.board.turn == PlayerColor.black,
+          // Game ID row (tappable to copy)
+          GestureDetector(
+            onTap: onCopyId,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0B0C10),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.link, color: Color(0xFF66FCF1), size: 14),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      gameId,
+                      style: const TextStyle(
+                        color: Color(0xFF66FCF1),
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.copy, color: Colors.grey, size: 12),
+                ],
+              ),
+            ),
           ),
-          // Turn indicator
-          Column(
+          const SizedBox(height: 4),
+          // Player row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              _PlayerChip(
+                name: gameState.blackPlayerId ?? 'Opponent',
+                color: PlayerColor.black,
+                isActive: gameState.board.turn == PlayerColor.black,
+              ),
               Text(
                 'TURN ${gameState.fullTurnCount + 1}',
                 style: const TextStyle(
@@ -153,13 +191,12 @@ class _GameTopBar extends StatelessWidget {
                   letterSpacing: 2,
                 ),
               ),
+              _PlayerChip(
+                name: gameState.whitePlayerId ?? 'You',
+                color: PlayerColor.white,
+                isActive: gameState.board.turn == PlayerColor.white,
+              ),
             ],
-          ),
-          // You
-          _PlayerChip(
-            name: gameState.whitePlayerId ?? 'You',
-            color: PlayerColor.white,
-            isActive: gameState.board.turn == PlayerColor.white,
           ),
         ],
       ),
@@ -275,8 +312,9 @@ class _PlayerChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accentColor =
-        color == PlayerColor.white ? const Color(0xFF66FCF1) : const Color(0xFFFF0055);
+    final accentColor = color == PlayerColor.white
+        ? const Color(0xFF66FCF1)
+        : const Color(0xFFFF0055);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

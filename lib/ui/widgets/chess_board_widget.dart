@@ -4,6 +4,9 @@ import '../../models/models.dart';
 import '../../models/game_state.dart';
 import '../../providers/game_provider.dart';
 
+/// Whether this is an online (multiplayer) game where only one side can move.
+final isOfflineGameProvider = StateProvider<bool>((ref) => false);
+
 /// The futuristic chess board with frosted glass tiles, neon glow effects,
 /// and smooth piece movement animations.
 class ChessBoardWidget extends ConsumerStatefulWidget {
@@ -26,7 +29,7 @@ class _ChessBoardWidgetState extends ConsumerState<ChessBoardWidget>
     final board = gameState.board;
     final myColor = ref.watch(myColorProvider) ?? PlayerColor.white;
 
-    // Board should be oriented: if I'm black, flip the board
+    // Board orientation: flip if viewing as black
     final isFlipped = myColor == PlayerColor.black;
 
     return AspectRatio(
@@ -35,12 +38,12 @@ class _ChessBoardWidgetState extends ConsumerState<ChessBoardWidget>
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: const Color(0xFF66FCF1).withOpacity(0.2),
+            color: const Color(0xFF66FCF1).withValues(alpha: 0.2),
             width: 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF66FCF1).withOpacity(0.1),
+              color: const Color(0xFF66FCF1).withValues(alpha: 0.1),
               blurRadius: 30,
               spreadRadius: 5,
             ),
@@ -97,6 +100,17 @@ class _ChessBoardWidgetState extends ConsumerState<ChessBoardWidget>
 
   void _onSquareTap(Position position, GameState gameState) {
     final piece = gameState.board.pieceAt(position);
+    final myColor = ref.read(myColorProvider) ?? PlayerColor.white;
+    final isOffline = ref.read(isOfflineGameProvider);
+
+    // Determine who is allowed to move:
+    // - Offline: anyone whose turn it is
+    // - Online: only the player whose color matches myColor AND it's their turn
+    final canMoveHere = isOffline
+        ? piece != null && piece.color == gameState.board.turn
+        : piece != null &&
+            piece.color == myColor &&
+            gameState.board.turn == myColor;
 
     // If we have a selected position and tap a legal target, make the move
     if (_selectedPosition != null && _legalMoves.contains(position)) {
@@ -123,8 +137,8 @@ class _ChessBoardWidgetState extends ConsumerState<ChessBoardWidget>
       return;
     }
 
-    // Select a piece (only if it's that color's turn)
-    if (piece != null && piece.color == gameState.board.turn) {
+    // Select a piece if allowed
+    if (canMoveHere) {
       setState(() {
         _selectedPosition = position;
         _legalMoves = gameState
@@ -150,12 +164,14 @@ class _BoardGradientPainter extends CustomPainter {
       end: Alignment.bottomRight,
       colors: [
         const Color(0xFF0B0C10),
-        const Color(0xFF1A0A2E).withOpacity(0.3),
+        const Color(0xFF1A0A2E).withValues(alpha: 0.3),
       ],
     );
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..shader = gradient.createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
+      Paint()
+        ..shader =
+            gradient.createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
     );
   }
 
@@ -185,14 +201,11 @@ class _BoardSquare extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Base color: frosted glass effect
-    final baseColor = isLight
-        ? const Color(0xFF2C3E50)
-        : const Color(0xFF1A252F);
+    final baseColor =
+        isLight ? const Color(0xFF2C3E50) : const Color(0xFF1A252F);
 
     Color squareColor = baseColor;
 
-    // Last move highlights
     if (isLastMoveFrom || isLastMoveTo) {
       squareColor = Color.alphaBlend(
         const Color(0x3066FCF1),
@@ -200,7 +213,6 @@ class _BoardSquare extends StatelessWidget {
       );
     }
 
-    // Selected square gets cyan glow
     if (isSelected) {
       squareColor = Color.alphaBlend(
         const Color(0x4066FCF1),
@@ -218,24 +230,21 @@ class _BoardSquare extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Legal move indicator
           if (isLegalTarget && !hasPiece)
             Container(
               width: 16,
               height: 16,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF66FCF1).withOpacity(0.4),
+                color: const Color(0xFF66FCF1).withValues(alpha: 0.4),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF66FCF1).withOpacity(0.4),
+                    color: const Color(0xFF66FCF1).withValues(alpha: 0.4),
                     blurRadius: 8,
                   ),
                 ],
               ),
             ),
-
-          // Legal capture indicator (glowing ring)
           if (isLegalTarget && hasPiece)
             Container(
               width: double.infinity,
@@ -243,20 +252,18 @@ class _BoardSquare extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.rectangle,
                 border: Border.all(
-                  color: const Color(0xFFFF0055).withOpacity(0.7),
+                  color: const Color(0xFFFF0055).withValues(alpha: 0.7),
                   width: 3,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFFF0055).withOpacity(0.4),
+                    color: const Color(0xFFFF0055).withValues(alpha: 0.4),
                     blurRadius: 12,
                     spreadRadius: 1,
                   ),
                 ],
               ),
             ),
-
-          // Piece
           if (child != null) child!,
         ],
       ),
@@ -285,7 +292,7 @@ class _PieceWidget extends StatelessWidget {
             ? BoxDecoration(
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFFF0055).withOpacity(0.5),
+                    color: const Color(0xFFFF0055).withValues(alpha: 0.5),
                     blurRadius: 8,
                   ),
                 ],
@@ -295,14 +302,12 @@ class _PieceWidget extends StatelessWidget {
           piece.unicode,
           style: TextStyle(
             fontSize: 32,
-            color: isWhite
-                ? const Color(0xFFF8F8F8)
-                : const Color(0xFFD0D0D0),
+            color: isWhite ? const Color(0xFFF8F8F8) : const Color(0xFFD0D0D0),
             shadows: [
               Shadow(
                 color: isWhite
-                    ? const Color(0xFF66FCF1).withOpacity(0.3)
-                    : const Color(0xFFFF0055).withOpacity(0.3),
+                    ? const Color(0xFF66FCF1).withValues(alpha: 0.3)
+                    : const Color(0xFFFF0055).withValues(alpha: 0.3),
                 blurRadius: 12,
               ),
             ],

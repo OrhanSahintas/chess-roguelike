@@ -124,15 +124,12 @@ class GameState extends Equatable {
       ability.tickCooldown();
     }
 
-    // 5. Check for drafted abilities that need to fire on first turn
-    // (CHARGE fires in onTurnStart, handled by the provider layer)
-
-    // 6. Update full turn count
+    // 5. Update full turn count
     final newTurnCount = currentTurn == PlayerColor.black
         ? fullTurnCount + 1
         : fullTurnCount;
 
-    // 7. Check for end conditions
+    // 6. Check for end conditions
     var newStatus = status;
     if (result.isCheckmate) {
       newStatus = GameStatus.finished;
@@ -145,42 +142,6 @@ class GameState extends Equatable {
       fullTurnCount: newTurnCount,
       status: newStatus,
     );
-  }
-
-  /// Applies a capture modification (revive or freeze).
-  GameState applyCaptureMod(CaptureModification mod, Piece captured, Position capturePos) {
-    var newBoard = board;
-    final newGrid = List.generate(
-        8, (row) => List.generate(8, (col) => board.grid[row][col]));
-
-    if (mod.revive && mod.revivePosition != null) {
-      final revived = captured.copyWith(
-        position: mod.revivePosition!,
-      );
-      newGrid[mod.revivePosition!.row][mod.revivePosition!.col] = revived;
-    }
-
-    if (mod.freezeCapturer) {
-      final capturer = newGrid[capturePos.row][capturePos.col];
-      if (capturer != null) {
-        newGrid[capturePos.row][capturePos.col] = capturer.copyWith(
-          isFrozen: true,
-          frozenTurnsRemaining: mod.freezeTurns,
-        );
-      }
-    }
-
-    newBoard = Board(
-      grid: newGrid,
-      turn: newBoard.turn,
-      enPassantTarget: newBoard.enPassantTarget,
-      halfMoveClock: newBoard.halfMoveClock,
-      fullMoveNumber: newBoard.fullMoveNumber,
-      castlingRights: newBoard.castlingRights,
-      lastMove: newBoard.lastMove,
-    );
-
-    return copyWith(board: newBoard);
   }
 
   /// Execute a Trojan Horse swap.
@@ -201,7 +162,7 @@ class GameState extends Equatable {
     final newBoard = Board(
       grid: newGrid,
       turn: board.turn,
-      enPassantTarget: null, // Swap clears en passant
+      enPassantTarget: null,
       halfMoveClock: board.halfMoveClock + 1,
       fullMoveNumber: board.fullMoveNumber,
       castlingRights: board.castlingRights,
@@ -217,7 +178,6 @@ class GameState extends Equatable {
 
     newGrid[target.row][target.col] = null;
 
-    // Find and update the Sniper's Nest ability cooldown
     final updatedAbilities = currentPlayerAbilities.map((a) {
       if (a is SnipersNest) {
         a.cooldownRemaining = a.maxCooldown;
@@ -257,11 +217,9 @@ class GameState extends Equatable {
   GameState addAbility(PlayerColor player, Ability ability) {
     ability.owner = player;
     if (player == PlayerColor.white) {
-      return copyWith(
-          whiteAbilities: [...whiteAbilities, ability]);
+      return copyWith(whiteAbilities: [...whiteAbilities, ability]);
     } else {
-      return copyWith(
-          blackAbilities: [...blackAbilities, ability]);
+      return copyWith(blackAbilities: [...blackAbilities, ability]);
     }
   }
 
@@ -273,7 +231,6 @@ class GameState extends Equatable {
     final piece = board.pieceAt(pos);
     if (piece == null) return baseMoves;
 
-    // Add ability-granted targets (e.g., Sniper's Nest)
     final abilityMoves = <Move>[];
     for (final ability in currentPlayerAbilities) {
       final extraTargets = ability.getAdditionalRawMoves(board, piece);
@@ -412,14 +369,31 @@ class GameState extends Equatable {
         'fullTurnCount': fullTurnCount,
       };
 
+  /// Parse from either format:
+  /// 1. Direct GameState JSON (camelCase keys)
+  /// 2. Supabase DB row (snake_case columns with board_state JSONB)
   factory GameState.fromJson(Map<String, dynamic> json) {
+    // If this is a DB row, extract the nested board_state
+    final stateJson = json.containsKey('board_state') && json['board_state'] is Map
+        ? Map<String, dynamic>.from(json['board_state'] as Map)
+        : json;
+
+    final boardJson = stateJson['board'];
+    if (boardJson == null || boardJson is! Map) {
+      throw ArgumentError('Missing or invalid "board" in game state JSON');
+    }
+
     return GameState(
-      gameId: json['gameId'] as String,
-      board: Board.fromJson(json['board'] as Map<String, dynamic>),
-      status: GameStatus.values.byName(json['status'] as String),
-      whitePlayerId: json['whitePlayerId'] as String?,
-      blackPlayerId: json['blackPlayerId'] as String?,
-      fullTurnCount: json['fullTurnCount'] as int? ?? 0,
+      gameId: (stateJson['gameId'] ?? json['id'] ?? '') as String,
+      board: Board.fromJson(Map<String, dynamic>.from(boardJson)),
+      status: GameStatus.values.byName(
+          (stateJson['status'] ?? json['status'] ?? 'waiting') as String),
+      whitePlayerId:
+          (stateJson['whitePlayerId'] ?? json['white_player_id']) as String?,
+      blackPlayerId:
+          (stateJson['blackPlayerId'] ?? json['black_player_id']) as String?,
+      fullTurnCount:
+          (stateJson['fullTurnCount'] ?? json['full_turn_count'] ?? 0) as int,
     );
   }
 

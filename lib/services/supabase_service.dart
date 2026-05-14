@@ -72,7 +72,7 @@ class SupabaseService {
     return _client
         .channel('game:$gameId')
         .onPostgresChanges(
-          event: PostgresChangeEvent.update,
+          event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'games',
           filter: PostgresChangeFilter(
@@ -81,11 +81,16 @@ class SupabaseService {
             value: gameId,
           ),
           callback: (payload) {
-            final data = payload.newRecord;
-            final gameState = GameState.fromJson(
-              Map<String, dynamic>.from(data),
-            );
-            onUpdate(gameState);
+            try {
+              final data = payload.newRecord;
+              if (data.isEmpty) return;
+              final gameState = GameState.fromJson(
+                Map<String, dynamic>.from(data),
+              );
+              onUpdate(gameState);
+            } catch (e) {
+              print('Realtime callback error: $e');
+            }
           },
         )
         .subscribe();
