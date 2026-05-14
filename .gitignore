@@ -1,0 +1,19 @@
+# Flutter
+.dart_tool/
+.packages
+build/
+*.iml
+.idea/
+.vscode/
+*.lock
+pubspec.lock
+
+# Web
+lib/generated_plugin_registrant.dart
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Supabase
+.env
