@@ -6,10 +6,9 @@ import 'services/supabase_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Supabase (replace with your project credentials)
   await SupabaseService.instance.initialize(
-    url: 'YOUR_SUPABASE_URL',
-    anonKey: 'YOUR_SUPABASE_ANON_KEY',
+    url: 'https://sdiqylrnphkqciukdfno.supabase.co',
+    anonKey: 'sb_publishable_MEldUMkX87j3f4pgaaJC9A_cIi47WW8',
   );
 
   runApp(

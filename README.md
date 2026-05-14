@@ -35,7 +35,7 @@ Standard chess rules apply — with one twist. After every 3 full turns (both pl
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/HermesAgent05/chess-roguelike.git
+git clone https://github.com/OrhanSahintas/chess-roguelike.git
 cd chess-roguelike
 flutter pub get
 ```
@@ -75,7 +75,7 @@ Edit `lib/main.dart` and replace the Supabase credentials:
 
 ```dart
 await SupabaseService.instance.initialize(
-  url: 'https://YOUR_PROJECT.supabase.co',
+  url: 'https://sdiqylrnphkqciukdfno.supabase.co',
   anonKey: 'YOUR_ANON_KEY',
 );
 ```

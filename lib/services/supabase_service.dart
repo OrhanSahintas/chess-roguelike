@@ -31,18 +31,16 @@ class SupabaseService {
 
   /// Create a new game and return the game ID.
   Future<String> createGame({required String whitePlayerId}) async {
-    final gameId = _client.from('games').insert({
+    final response = await _client.from('games').insert({
       'white_player_id': whitePlayerId,
       'status': 'waiting',
       'board_state': GameState.newGame(gameId: '', whitePlayerId: whitePlayerId)
-          .copyWith(gameId: '')
           .board
           .toJson(),
       'turn': 'white',
     }).select('id').single();
 
-    final id = (gameId as Map<String, dynamic>)['id'] as String;
-    return id;
+    return response['id'] as String;
   }
 
   /// Join a game as black.
@@ -65,6 +63,7 @@ class SupabaseService {
       'board_state': state.toJson(),
       'turn': state.board.turn.name,
       'status': state.status.name,
+      'full_turn_count': state.fullTurnCount,
     }).eq('id', gameId);
   }
 
