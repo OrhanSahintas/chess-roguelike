@@ -1,21 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/models.dart';
 import '../../models/game_state.dart';
 import '../../providers/game_provider.dart';
+import '../../services/supabase_service.dart';
 import '../widgets/chess_board_widget.dart';
 import 'draft_screen.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
   final String gameId;
+  final bool isOffline;
 
-  const GameScreen({super.key, required this.gameId});
+  const GameScreen({super.key, required this.gameId, this.isOffline = false});
 
   @override
   ConsumerState<GameScreen> createState() => _GameScreenState();
 }
 
 class _GameScreenState extends ConsumerState<GameScreen> {
+  RealtimeChannel? _channel;
+
   @override
   void initState() {
     super.initState();
@@ -24,6 +29,44 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (ref.read(gameProvider) == null) {
       gameNotifier.newGame(gameId: widget.gameId);
     }
+
+    // Subscribe to realtime updates when playing online
+    if (!widget.isOffline) {
+      _subscribeToGame();
+    }
+  }
+
+  void _subscribeToGame() {
+    try {
+      _channel = SupabaseService.instance.subscribeToGame(
+        widget.gameId,
+        (updatedState) {
+          // Sync remote board state into our provider
+          ref.read(gameProvider.notifier).loadFromJson(updatedState.toJson());
+        },
+      );
+    } catch (e) {
+      debugPrint('Realtime subscription failed: $e');
+    }
+  }
+
+  /// Push current game state to Supabase after a move.
+  void _syncToSupabase(GameState state) {
+    if (widget.isOffline) return;
+    try {
+      SupabaseService.instance.updateBoardState(
+        gameId: widget.gameId,
+        state: state,
+      );
+    } catch (e) {
+      debugPrint('Failed to sync game state: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _channel?.unsubscribe();
+    super.dispose();
   }
 
   @override
@@ -48,9 +91,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 // Top bar
                 _GameTopBar(gameState: gameState),
                 // Chess board
-                Expanded(
+                const Expanded(
                   child: Center(
-                    child: const ChessBoardWidget(),
+                    child: ChessBoardWidget(),
                   ),
                 ),
                 // Bottom info
@@ -63,7 +106,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 onAbilitySelected: (ability) {
                   final myColor = ref.read(myColorProvider);
                   if (myColor != null) {
-                    ref.read(gameProvider.notifier).selectDraftAbility(myColor, ability);
+                    ref
+                        .read(gameProvider.notifier)
+                        .selectDraftAbility(myColor, ability);
+                    _syncToSupabase(ref.read(gameProvider)!);
                   }
                 },
               ),
@@ -157,7 +203,8 @@ class _GameBottomBar extends StatelessWidget {
                 itemBuilder: (context, index) {
                   final ability = abilities[index];
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: const Color(0xFF2A3441),
                       borderRadius: BorderRadius.circular(8),
@@ -181,9 +228,8 @@ class _GameBottomBar extends StatelessWidget {
                         Text(
                           ability.name,
                           style: TextStyle(
-                            color: ability.isReady
-                                ? Colors.white
-                                : Colors.grey,
+                            color:
+                                ability.isReady ? Colors.white : Colors.grey,
                             fontSize: 13,
                           ),
                         ),
@@ -229,16 +275,14 @@ class _PlayerChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accentColor = color == PlayerColor.white
-        ? const Color(0xFF66FCF1)
-        : const Color(0xFFFF0055);
+    final accentColor =
+        color == PlayerColor.white ? const Color(0xFF66FCF1) : const Color(0xFFFF0055);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: isActive
-            ? accentColor.withValues(alpha: 0.15)
-            : Colors.transparent,
+        color:
+            isActive ? accentColor.withValues(alpha: 0.15) : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: isActive ? accentColor : Colors.grey[700]!,

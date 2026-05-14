@@ -199,7 +199,7 @@ class HomeScreen extends ConsumerWidget {
     ref.read(gameProvider.notifier).newGame(gameId: gameId);
     ref.read(myColorProvider.notifier).state = PlayerColor.white;
 
-    context.go('/game/$gameId');
+    context.go('/game/$gameId?offline=true');
   }
 }
 

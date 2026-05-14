@@ -3,6 +3,7 @@ import '../models/models.dart';
 import '../models/game_state.dart';
 import '../models/ability_pool.dart';
 import '../abilities/abilities.dart';
+import '../services/supabase_service.dart';
 
 /// The core game state notifier. Manages the full match lifecycle:
 /// move execution, draft triggers, ability management.
@@ -60,8 +61,24 @@ class GameNotifier extends StateNotifier<GameState?> {
     // Normal move execution
     state = currentState.executeMove(move);
 
+    // Sync to Supabase for multiplayer
+    _syncState();
+
     // After executing, check if we need to trigger the draft
     _checkDraft();
+  }
+
+  /// Try to sync state to Supabase (no-op if offline).
+  void _syncState() {
+    if (state == null) return;
+    try {
+      SupabaseService.instance.updateBoardState(
+        gameId: state!.gameId,
+        state: state!,
+      );
+    } catch (_) {
+      // Silently ignore sync failures (offline mode, no connection, etc.)
+    }
   }
 
   /// Execute a Trojan Horse swap.

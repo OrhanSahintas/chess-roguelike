@@ -46,8 +46,8 @@ enum PlayerColor {
 
   PlayerColor get opponent => this == white ? black : white;
 
-  /// Direction pawns move: White moves down (row +1), Black moves up (row -1).
-  int get pawnDirection => this == white ? 1 : -1;
+  /// Direction pawns move: White moves up (row -1 toward Black), Black moves down (row +1 toward White).
+  int get pawnDirection => this == white ? -1 : 1;
 
   /// Row where this color's pawns promote.
   int get promotionRow => this == white ? 0 : 7;

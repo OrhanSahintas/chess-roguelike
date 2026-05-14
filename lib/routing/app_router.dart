@@ -21,7 +21,8 @@ class AppRouter {
         name: 'game',
         builder: (context, state) {
           final gameId = state.pathParameters['gameId']!;
-          return GameScreen(gameId: gameId);
+          final isOffline = state.uri.queryParameters['offline'] == 'true';
+          return GameScreen(gameId: gameId, isOffline: isOffline);
         },
       ),
       // Deep link: /join/{gameId} → same as /game/{gameId}

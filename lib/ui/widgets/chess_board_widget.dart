@@ -97,7 +97,6 @@ class _ChessBoardWidgetState extends ConsumerState<ChessBoardWidget>
 
   void _onSquareTap(Position position, GameState gameState) {
     final piece = gameState.board.pieceAt(position);
-    final myColor = ref.read(myColorProvider) ?? PlayerColor.white;
 
     // If we have a selected position and tap a legal target, make the move
     if (_selectedPosition != null && _legalMoves.contains(position)) {
@@ -124,8 +123,8 @@ class _ChessBoardWidgetState extends ConsumerState<ChessBoardWidget>
       return;
     }
 
-    // Select a piece (only if it's our turn and our piece)
-    if (piece != null && piece.color == myColor && gameState.board.turn == myColor) {
+    // Select a piece (only if it's that color's turn)
+    if (piece != null && piece.color == gameState.board.turn) {
       setState(() {
         _selectedPosition = position;
         _legalMoves = gameState
