@@ -282,6 +282,8 @@ class _PieceWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isWhite = piece.color == PlayerColor.white;
+    final fgColor = isWhite ? const Color(0xFFF0F0F0) : const Color(0xFF404040);
+    final glowColor = isWhite ? const Color(0xFF66FCF1) : const Color(0xFFFF0055);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
@@ -299,17 +301,14 @@ class _PieceWidget extends StatelessWidget {
         child: FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
-            piece.unicode,
+            piece.letter,
             style: TextStyle(
               fontSize: 36,
-              fontWeight: FontWeight.normal,
-              fontFamily: 'Arial',
-              color: isWhite ? const Color(0xFFF0F0F0) : const Color(0xFF404040),
+              fontWeight: FontWeight.w900,
+              color: fgColor,
               shadows: [
                 Shadow(
-                  color: isWhite
-                      ? const Color(0xFF66FCF1).withValues(alpha: 0.4)
-                      : const Color(0xFFFF0055).withValues(alpha: 0.4),
+                  color: glowColor.withValues(alpha: 0.5),
                   blurRadius: 12,
                 ),
               ],

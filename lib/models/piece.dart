@@ -34,17 +34,9 @@ class Piece extends Equatable {
     _nextId = 0;
   }
 
-  /// Unicode symbol with color: ♔ ♕ ♖ ♗ ♘ ♙ / ♚ ♛ ♜ ♝ ♞ ♟
+  /// Unicode symbol: ♔ ♕ ♖ ♗ ♘ ♙ / ♚ ♛ ♜ ♝ ♞ ♟
   String get unicode {
-    const whiteSymbols = {
-      PieceType.king: '♔',
-      PieceType.queen: '♕',
-      PieceType.rook: '♖',
-      PieceType.bishop: '♗',
-      PieceType.knight: '♘',
-      PieceType.pawn: '♙',
-    };
-    const blackSymbols = {
+    const allSymbols = {
       PieceType.king: '♚',
       PieceType.queen: '♛',
       PieceType.rook: '♜',
@@ -52,7 +44,20 @@ class Piece extends Equatable {
       PieceType.knight: '♞',
       PieceType.pawn: '♟',
     };
-    return color == PlayerColor.white ? whiteSymbols[type]! : blackSymbols[type]!;
+    return allSymbols[type]!;
+  }
+
+  /// Clean letter symbol: K Q R B N P (always consistent across fonts).
+  String get letter {
+    const allLetters = {
+      PieceType.king: 'K',
+      PieceType.queen: 'Q',
+      PieceType.rook: 'R',
+      PieceType.bishop: 'B',
+      PieceType.knight: 'N',
+      PieceType.pawn: 'P',
+    };
+    return allLetters[type]!;
   }
 
   /// Create a copy with updated fields.
