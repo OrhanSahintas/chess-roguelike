@@ -65,11 +65,11 @@ class GameNotifier extends StateNotifier<GameState?> {
     // Normal move execution
     state = currentState.executeMove(move);
 
-    // Sync to Supabase for multiplayer
-    _syncState();
-
-    // After executing, check if we need to trigger the draft
+    // Check draft BEFORE syncing so opponent sees drafting status
     _checkDraft();
+
+    // Sync to Supabase for multiplayer (includes draft status if triggered)
+    _syncState();
   }
 
   /// Try to sync state to Supabase (no-op if offline).
@@ -129,8 +129,7 @@ class GameNotifier extends StateNotifier<GameState?> {
     if (state == null) return;
     state = state!.addAbility(player, ability);
 
-    // If both players have drafted (or in single-player/testing), resume
-    // For now, auto-resume after selection
+    // Resume playing after draft
     state = state!.copyWith(status: GameStatus.playing);
 
     // Trigger CHARGE immediately if selected
@@ -140,6 +139,9 @@ class GameNotifier extends StateNotifier<GameState?> {
         state = state!.executeMove(move);
       }
     }
+
+    // Sync after draft so opponent sees the update
+    _syncState();
   }
 
   /// Reset the game.
