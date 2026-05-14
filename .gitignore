@@ -9,7 +9,6 @@ build/
 pubspec.lock
 
 # Web
-lib/generated_plugin_registrant.dart
 
 # OS
 .DS_Store
